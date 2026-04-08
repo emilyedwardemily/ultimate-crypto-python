@@ -1,0 +1,31 @@
+# --- SIRI ZA USALAMA (Hizi zisivuje kamwe) ---
+.env
+*.pem
+*.key
+MFA_SECRET.txt
+audit_trail.log
+
+# --- TAKATAKA ZA PYTHON ---
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.pytest_cache/
+
+# --- TAKATAKA ZA JAVA & MAVEN ---
+target/
+*.class
+*.jar
+*.war
+.mtj.tmp/
+.classpath
+.project
+.settings/
+
+# --- TAKATAKA ZA MFUMO (OS) ---
+.DS_Store
+Thumbs.db
+
+# --- TAKATAKA ZA VS CODE ---
+.vscode/
+.idea/
