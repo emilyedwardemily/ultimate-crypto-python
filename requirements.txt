@@ -21,3 +21,4 @@ uvloop
 watchfiles
 websockets
 argon2-cffi
+fastapi-mail
