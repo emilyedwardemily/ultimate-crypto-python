@@ -306,42 +306,48 @@ async def legacy_cipher(request: dict, x_api_key: str = Header(None)):
             else: result += char
 
     return {"status": "success", "result": result}
-
 @app.post("/legacy-cipher")
-async def legacy_cipher(request: dict, x_api_key: str = Header(None)):
+async def legacy_cipher(request: Request, x_api_key: str = Header(None, alias="X-API-KEY")):
+    # 1. Uhakiki wa Key toka Java
     if x_api_key != "Emily_Crypto_Secure_2026_KIU":
-        raise HTTPException(status_code=401)
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
-    text = request.get("data", "")
-    shift = request.get("shift", 3)
-    c_type = request.get("type", "caesar_shift")
-    key = request.get("key", "SECRET").upper() # Key ya Vigenere
+    body = await request.json()
+    text = body.get("data", "")
+    shift = body.get("shift", 3)
+    c_type = body.get("type", "caesar_shift")
+    key = body.get("key", "SECRET").upper()
     result = ""
 
     if "vigenere" in c_type:
-        # Vigenère Logic (Polyalphabetic)
         key_idx = 0
-        is_encrypt = shift >= 0 # Tunatumia shift chanya kwa Encrypt, hasi kwa Decrypt
-        
+        is_encrypt = shift >= 0
         for char in text:
             if char.isalpha():
                 base = 65 if char.isupper() else 97
                 k = ord(key[key_idx % len(key)]) - 65
                 k = k if is_encrypt else -k
-                
                 result += chr((ord(char) - base + k) % 26 + base)
                 key_idx += 1
-            else:
-                result += char
+            else: result += char
+
     elif "atbash" in c_type:
-        # ... (Atbash logic ile ile uliyoweka mwanzo)
-        pass
+        # ATBASH LOGIC - Badala ya 'pass', sasa inafanya kazi
+        for char in text:
+            if char.isalpha():
+                base = 65 if char.isupper() else 97
+                result += chr(base + (25 - (ord(char) - base)))
+            else: result += char
+
     else:
-        # Caesar/Rot13 logic
-        pass
+        # CAESAR/ROT13 LOGIC - Badala ya 'pass', sasa inafanya kazi
+        for char in text:
+            if char.isalpha():
+                base = 65 if char.isupper() else 97
+                result += chr((ord(char) - base + shift) % 26 + base)
+            else: result += char
 
     return {"status": "success", "result": result}
-
 @app.get("/get-audit-logs")
 async def get_audit_logs():
     try:
