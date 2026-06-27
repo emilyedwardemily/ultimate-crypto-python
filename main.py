@@ -1,8 +1,10 @@
 import os
+import json
 import uvicorn
 import logging
 import base64
 import random
+import httpx
 import urllib.parse
 from datetime import datetime # Muhimu kwa audit logs
 from typing import Optional
@@ -23,6 +25,7 @@ from core.crypto_engine import CryptoEngine
 from core.key_manager import KeyManager
 from core.signatures import SignatureEngine
 from core.anti_forensics import AntiForensics
+from core.secret_sharing import split_secret, reconstruct_secret
 
 # CONFIGURATION
 API_SECRET = os.getenv("API_SECRET_KEY", "Default_Secret_Change_Me")
@@ -87,6 +90,14 @@ class CryptoPayload(BaseModel):
     operator_id: Optional[str] = "UC-PRO-71468B1B" # Default ID yako
     action: Optional[str] = None
     module: Optional[str] = None
+
+class SplitPayload(BaseModel):
+    secret: str
+    n: int
+    k: int
+
+class ReconstructPayload(BaseModel):
+    shares: list[dict]
 
 # --- INTEGRATED ROUTES ---
 
@@ -361,6 +372,208 @@ async def get_audit_logs():
     except Exception as e:
         print(f"Error fetching logs: {e}")
         return []
+
+@app.post("/split")
+async def split_secret_route(payload: SplitPayload, x_api_key: Optional[str] = Header(None, alias="X-API-KEY")):
+    if x_api_key != API_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized Access")
+    try:
+        if payload.k < 2:
+            raise HTTPException(status_code=400, detail="Threshold k must be at least 2")
+        if payload.n < payload.k:
+            raise HTTPException(status_code=400, detail="n must be >= k")
+        if not payload.secret:
+            raise HTTPException(status_code=400, detail="Secret cannot be empty")
+
+        shares = split_secret(payload.secret, payload.n, payload.k)
+        return {
+            "status": "success",
+            "threshold": payload.k,
+            "total_shares": payload.n,
+            "shares": shares
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Split failed: {str(e)}")
+
+
+@app.post("/reconstruct")
+async def reconstruct_secret_route(payload: ReconstructPayload, x_api_key: Optional[str] = Header(None, alias="X-API-KEY")):
+    if x_api_key != API_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized Access")
+    try:
+        if not payload.shares or len(payload.shares) < 2:
+            raise HTTPException(status_code=400, detail="At least 2 shares are required")
+
+        secret = reconstruct_secret(payload.shares)
+        return {
+            "status": "success",
+            "secret": secret,
+            "shares_used": len(payload.shares)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Reconstruction failed: {str(e)}")
+
+
+# --- AZAMPAY PAYMENT INTEGRATION ---
+
+AZAMPAY_APP_NAME = os.getenv("AZAMPAY_APP_NAME", "UltimateCryptoSuite")
+AZAMPAY_CLIENT_ID = os.getenv("AZAMPAY_CLIENT_ID", "")
+AZAMPAY_CLIENT_SECRET = os.getenv("AZAMPAY_CLIENT_SECRET", "")
+AZAMPAY_X_API_KEY = os.getenv("AZAMPAY_X_API_KEY", "")
+AZAMPAY_AUTH_URL = "https://authenticator-sandbox.azampay.co.tz/AppRegistration/GenerateToken"
+AZAMPAY_CHECKOUT_URL = "https://sandbox.azampay.co.tz/api/v1/checkout/trigger"
+
+
+class PaymentPayload(BaseModel):
+    phoneNumber: str
+    amount: str
+    email: Optional[str] = None
+
+
+async def get_azamPay_token() -> str:
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(AZAMPAY_AUTH_URL, json={
+            "appName": AZAMPAY_APP_NAME,
+            "clientId": AZAMPAY_CLIENT_ID,
+            "clientSecret": AZAMPAY_CLIENT_SECRET
+        })
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("data", {}).get("accessToken") or data.get("accessToken")
+
+
+@app.post("/api/v1/payments/stk-push")
+async def stk_push(
+    payload: PaymentPayload,
+    x_api_key: Optional[str] = Header(None, alias="X-API-KEY")
+):
+    if x_api_key != API_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    if not payload.phoneNumber or not payload.amount:
+        raise HTTPException(status_code=400, detail="Phone number and amount required")
+
+    try:
+        logging.info(f"[AZAMPAY] Initiating payment: {payload.phoneNumber} TZS {payload.amount}")
+        token = await get_azamPay_token()
+        external_id = f"UC-{int(datetime.now().timestamp() * 1000)}"
+
+        checkout_body = {
+            "amount": str(payload.amount),
+            "currency": "TZS",
+            "mobile": payload.phoneNumber,
+            "externalId": external_id,
+            "provider": "AzamPesa"
+        }
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            checkout_resp = await client.post(
+                AZAMPAY_CHECKOUT_URL,
+                json=checkout_body,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {token}",
+                    "X-API-Key": AZAMPAY_X_API_KEY
+                }
+            )
+            checkout_resp.raise_for_status()
+            checkout_data = checkout_resp.json()
+
+        # Record payment in MongoDB
+        if db is not None:
+            await db["payments"].insert_one({
+                "externalId": external_id,
+                "phoneNumber": payload.phoneNumber,
+                "amount": payload.amount,
+                "email": payload.email or None,
+                "status": "PENDING",
+                "response": checkout_data,
+                "createdAt": datetime.now()
+            })
+
+        logging.info(f"[AZAMPAY] Payment initiated: {external_id}")
+        return {
+            "success": True,
+            "message": "Payment request sent. Confirm on your phone.",
+            "externalId": external_id,
+            "data": checkout_data
+        }
+
+    except httpx.HTTPStatusError as e:
+        logging.error(f"[AZAMPAY] HTTP error: {e.response.status_code} - {e.response.text}")
+        raise HTTPException(status_code=502, detail=f"AzamPay gateway error: {e.response.text}")
+    except Exception as e:
+        logging.error(f"[AZAMPAY] STK Push failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Payment gateway error: {str(e)}")
+
+
+@app.post("/api/v1/payments/webhook")
+async def payment_webhook(request: Request):
+    try:
+        body = await request.json()
+        logging.info(f"[AZAMPAY] Webhook received: {json.dumps(body)}")
+
+        transaction_status = (body.get("transactionstatus") or body.get("status") or "").lower()
+        msisdn = body.get("msisdn") or body.get("mobile") or ""
+        amount = body.get("amount") or ""
+        reference = body.get("reference") or body.get("externalId") or body.get("utilityref") or ""
+        operator = body.get("operator") or "AzamPesa"
+
+        # Record raw webhook
+        if db is not None:
+            await db["payment_webhooks"].insert_one({
+                "payload": body,
+                "receivedAt": datetime.now()
+            })
+
+        if transaction_status == "success":
+            if db is not None:
+                # Update payment record
+                await db["payments"].update_one(
+                    {"externalId": reference},
+                    {"$set": {"status": "SUCCESS", "completedAt": datetime.now(), "webhookData": body}}
+                )
+
+                # Find user by phone or email and upgrade to PREMIUM
+                user_query = {"$or": [{"phone": msisdn}]}
+                payment = await db["payments"].find_one({"externalId": reference})
+                if payment and payment.get("email"):
+                    user_query["$or"].append({"email": payment["email"]})
+
+                update_result = await db["users"].update_many(
+                    user_query,
+                    {"$set": {"role": "PREMIUM", "is_premium": True, "upgradedAt": datetime.now()}}
+                )
+                logging.info(f"[AZAMPAY] Premium upgrade: {update_result.modified_count} user(s) for {msisdn}")
+
+                # Audit log
+                await db["forensic_logs"].insert_one({
+                    "operator_id": "SYSTEM",
+                    "action": "PAYMENT_SUCCESS",
+                    "module": "AZAMPAY_GATEWAY",
+                    "detail": f"Phone: {msisdn}, Amount: {amount}, Ref: {reference}",
+                    "timestamp": datetime.now(),
+                    "status": "PREMIUM_UPGRADE"
+                })
+
+            return {"status": "received", "message": "Payment processed successfully"}
+        else:
+            if db is not None:
+                await db["payments"].update_one(
+                    {"externalId": reference},
+                    {"$set": {"status": "FAILED", "completedAt": datetime.now(), "webhookData": body}}
+                )
+            logging.info(f"[AZAMPAY] Payment failed: {reference} - {transaction_status}")
+            return {"status": "received", "message": "Payment failed recorded"}
+
+    except Exception as e:
+        logging.error(f"[AZAMPAY] Webhook error: {e}")
+        return {"status": "error", "message": str(e)}
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
