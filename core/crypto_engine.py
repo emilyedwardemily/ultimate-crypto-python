@@ -23,7 +23,9 @@ class CryptoEngine:
     def decrypt(encoded_data: str, key: bytes):
         try:
             aesgcm = AESGCM(key)
-            raw = base64.b64decode(encoded_data)
+            # Ondoa whitespace/newlines zilizoingia wakati wa kunakili ciphertext
+            clean = "".join(encoded_data.split())
+            raw = base64.b64decode(clean)
             
             # Tenganisha Nonce (12 bytes za mwanzo) na Ciphertext (zilizobaki)
             nonce = raw[:12]

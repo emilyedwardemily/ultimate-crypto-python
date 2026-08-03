@@ -58,3 +58,23 @@ class SignatureEngine:
             return True
         except (ValueError, TypeError):
             return False
+
+    @staticmethod
+    def verify_local(data: str, signature_b64: str) -> dict:
+        """
+        Inahakiki signature kwa kutumia public key inayotolewa
+        kutoka private key iliyohifadhiwa kwenye server (private_key.pem).
+        """
+        try:
+            if not os.path.exists("private_key.pem"):
+                return {"valid": False, "error": "No signing key on server"}
+            with open("private_key.pem", "rb") as f:
+                key = RSA.import_key(f.read())
+
+            h = SHA256.new(data.encode('utf-8'))
+            signature = base64.b64decode(signature_b64)
+
+            pkcs1_15.new(key).verify(h, signature)
+            return {"valid": True}
+        except (ValueError, TypeError):
+            return {"valid": False}

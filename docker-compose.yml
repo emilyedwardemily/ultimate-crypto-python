@@ -1,0 +1,108 @@
+version: "3.9"
+
+services:
+  mongodb:
+    image: mongo:7
+    container_name: uc-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - uc-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis:
+    image: redis:7-alpine
+    container_name: uc-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - uc-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  python-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: uc-python-api
+    restart: unless-stopped
+    ports:
+      - "7900:7900"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/ultimate_crypto
+      - REDIS_URL=redis://redis:6379/0
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - CTF_LAB_IMAGE=kalilinux/rolling
+      - CTF_LAB_TIMEOUT_MINUTES=30
+      - CTF_MAX_LABS_PER_USER=3
+    volumes:
+      - ./logs:/app/logs
+      - ./core:/app/core
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - uc-network
+      - uc-lab-network
+
+  node-gateway:
+    build:
+      context: /home/emily/Desktop/UltimateCryptoSuite/src/server
+      dockerfile: Dockerfile
+    container_name: uc-node-gateway
+    restart: unless-stopped
+    ports:
+      - "10000:10000"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    env_file:
+      - /home/emily/Desktop/UltimateCryptoSuite/src/server/.env
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/ultimate_crypto
+    networks:
+      - uc-network
+
+  web-frontend:
+    build:
+      context: /home/emily/Desktop/UltimateCryptoSuite/web
+      dockerfile: Dockerfile
+    container_name: uc-web-ui
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - python-backend
+      - node-gateway
+    environment:
+      - NEXT_PUBLIC_PYTHON_URL=http://python-backend:7900
+      - NEXT_PUBLIC_NODE_URL=http://node-gateway:10000
+      - NEXT_PUBLIC_API_KEY=Emily_Crypto_Secure_2026_KIU
+    networks:
+      - uc-network
+
+volumes:
+  mongo_data:
+
+networks:
+  uc-network:
+    driver: bridge
+  uc-lab-network:
+    driver: bridge
+    internal: true
