@@ -1,5 +1,6 @@
 import os
 import secrets
+import logging
 
 class AntiForensics:
     @staticmethod
@@ -30,5 +31,5 @@ class AntiForensics:
             return True
             
         except Exception as e:
-            print(f"Forensic Wipe Error: {e}")
+            logging.exception(f"Forensic Wipe Error: {e}")
             return False

@@ -2,20 +2,17 @@ import os
 import json
 import uvicorn
 import logging
-import base64
 import secrets
 import httpx
 import urllib.parse
 from datetime import datetime # Muhimu kwa audit logs
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Header, Request, Depends
+from fastapi import FastAPI, HTTPException, Header, Request
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
-import gridfs
-from bson import ObjectId
 
 # --- 1. LOAD ENVIRONMENT VARIABLES ---
 load_dotenv()
@@ -56,9 +53,9 @@ try:
 
     db = client[DB_NAME]
     license_collection = db["licenses"]
-    print("✅ [DB] MongoDB Atlas Connected Successfully")
+    logging.info("[DB] MongoDB Atlas Connected Successfully")
 except Exception as e:
-    print(f"❌ [DB] Connection Error: {e}")
+    logging.exception(f"[DB] Connection Error: {e}")
 
 # --- 3. EMAIL CONFIG ---
 conf = ConnectionConfig(

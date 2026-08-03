@@ -33,6 +33,6 @@ class CryptoEngine:
             
             decrypted_bytes = aesgcm.decrypt(nonce, ciphertext, None)
             return decrypted_bytes.decode('utf-8')
-        except Exception as e:
+        except Exception:
             # Hapa itatokea kama Key ni mbaya au data imebadilishwa (Tampered)
             return f"DECRYPTION_ERROR: Authentication failed or malformed data."

@@ -1,4 +1,3 @@
-import os
 import secrets
 
 # GF(2^256) irreducible polynomial: x^256 + x^10 + x^5 + x^2 + 1

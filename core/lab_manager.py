@@ -1,8 +1,5 @@
 import os
-import json
 import uuid
-import time
-import asyncio
 import logging
 import docker
 from typing import Optional
@@ -103,7 +100,7 @@ async def terminate_lab(lab_id: str, operator_id: str) -> dict:
         except docker.errors.NotFound:
             pass
         except Exception as e:
-            logging.error(f"Failed to stop container {lab_id}: {e}")
+            logging.exception(f"Failed to stop container {lab_id}: {e}")
 
     lab["status"] = "terminated"
     lab["terminated_at"] = datetime.now().isoformat()
