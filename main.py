@@ -1,5 +1,7 @@
 import os
 import json
+import hmac
+import hashlib
 import uvicorn
 import logging
 import secrets
@@ -32,6 +34,7 @@ DB_NAME = "ultimate_crypto"
 
 # --- CONSTANTS (ili kuepuka kurudia literals, sonar S1192) ---
 MSG_UNAUTHORIZED = "Unauthorized Access"
+CERT_SIGNING_SECRET = "Emily_Crypto_Secure_2026_KIU"
 
 # --- 2. SAFE DATABASE CONNECTION ---
 db = None
@@ -449,6 +452,22 @@ async def caesar_cipher(request: dict, x_api_key: str = Header(None)):
             result += char
 
     return {"status": "success", "result": result}
+
+
+@app.get("/verify-cert")
+async def verify_cert(vid: str, sig: str):
+    """Public certificate-verification endpoint for the PDF QR codes.
+    Recomputed HMAC-SHA256(vid) must match the signed sig to be valid."""
+    expected = hmac.new(
+        CERT_SIGNING_SECRET.encode("utf-8"), vid.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(expected, sig):
+        raise HTTPException(status_code=400, detail="Invalid certificate signature")
+    return {
+        "valid": True,
+        "vid": vid,
+        "message": "Certificate verified by the UC-Fortress Academy verification registry.",
+    }
 
 
 def _shift_char(char: str, offset: int) -> str:
