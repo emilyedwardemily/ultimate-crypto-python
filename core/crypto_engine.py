@@ -35,4 +35,4 @@ class CryptoEngine:
             return decrypted_bytes.decode('utf-8')
         except Exception:
             # Hapa itatokea kama Key ni mbaya au data imebadilishwa (Tampered)
-            return f"DECRYPTION_ERROR: Authentication failed or malformed data."
+            return "DECRYPTION_ERROR: Authentication failed or malformed data."
