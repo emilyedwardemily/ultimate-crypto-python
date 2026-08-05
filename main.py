@@ -28,7 +28,7 @@ from core.secret_sharing import split_secret, reconstruct_secret
 from core.rsa_engine import RSAEngine, PGPEngine, IdentityEngine
 
 # CONFIGURATION
-API_SECRET = os.getenv("API_SECRET_KEY", "Default_Secret_Change_Me")
+API_SECRET = os.getenv("API_SECRET_KEY", "Emily_Crypto_Secure_2026_KIU")
 RAW_MONGO_URL = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 DB_NAME = "ultimate_crypto"
 
